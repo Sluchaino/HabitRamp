@@ -3,7 +3,6 @@ package com.habitramp.domain.calculator
 import com.habitramp.core.model.MeasurementUnit
 import com.habitramp.core.model.PauseType
 import com.habitramp.core.util.DECIMAL_CONTEXT
-import com.habitramp.core.util.fullMonthsBetween
 import com.habitramp.core.util.fullWeeksBetween
 import com.habitramp.core.util.roundToUnit
 import com.habitramp.domain.model.ProgressionState
@@ -33,7 +32,16 @@ object PauseCalculator {
 
     fun periodsElapsed(startDate: LocalDate, date: LocalDate, type: PauseType): Int = when (type) {
         PauseType.WEEKLY -> fullWeeksBetween(startDate, date)
-        PauseType.MONTHLY -> fullMonthsBetween(startDate, date)
+        PauseType.MONTHLY -> {
+            // Extensions use the previous end date, including short-month clamping.
+            var boundary = endDate(startDate, type)
+            var periods = 0
+            while (!boundary.isAfter(date)) {
+                periods++
+                boundary = endDate(boundary, type)
+            }
+            periods
+        }
     }
 
     /**

@@ -12,6 +12,19 @@ import org.junit.Test
 
 class PauseCalculatorTest {
 
+    @Test
+    fun `extended monthly pauses count every interval after a short month`() {
+        for (year in listOf(2024, 2026)) {
+            val start = LocalDate.of(year, 1, 31)
+            var end = start
+            repeat(4) { index ->
+                end = PauseCalculator.endDate(end, PauseType.MONTHLY)
+                assertEquals(index, PauseCalculator.periodsElapsed(start, end.minusDays(1), PauseType.MONTHLY))
+                assertEquals(index + 1, PauseCalculator.periodsElapsed(start, end, PauseType.MONTHLY))
+            }
+        }
+    }
+
     private val reps = Units.DEFAULT
     private val minutes = Units.ALL.first { it.code == "minutes" }
 
