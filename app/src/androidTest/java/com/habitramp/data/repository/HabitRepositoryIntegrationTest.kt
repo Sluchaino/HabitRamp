@@ -39,6 +39,7 @@ class HabitRepositoryIntegrationTest {
     private lateinit var context: Context
     private lateinit var db: HabitDatabase
     private lateinit var repository: HabitRepository
+    private var beforeNotificationWrite: (() -> Unit)? = null
 
     /** Monday, the first day of the test week. */
     private var today: LocalDate = LocalDate.of(2026, 3, 2)
@@ -49,6 +50,15 @@ class HabitRepositoryIntegrationTest {
         today = LocalDate.of(2026, 3, 2)
         db = Room.inMemoryDatabaseBuilder(context, HabitDatabase::class.java)
             .allowMainThreadQueries()
+            .setQueryCallback({ sql, _ ->
+                if (sql.startsWith("UPDATE", ignoreCase = true) &&
+                    sql.contains("notification", ignoreCase = true)
+                ) {
+                    val action = beforeNotificationWrite
+                    beforeNotificationWrite = null
+                    action?.invoke()
+                }
+            }, java.util.concurrent.Executor { it.run() })
             .build()
         repository = HabitRepository(db) { today }
         runBlocking { repository.initialize() }
@@ -60,6 +70,25 @@ class HabitRepositoryIntegrationTest {
     }
 
     // ------------------------------------------------------------ idempotency
+
+    @Test
+    fun notificationUpdatePreservesProgressionWrittenAfterItsRead() = runBlocking {
+        val habitId = createHabit("Read")
+        // Inject a progression write at the SQL boundary after any repository read.
+        // A whole-entity notification update overwrites it; a column update preserves it.
+        beforeNotificationWrite = {
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE habits SET currentGoal = '9', dayIndex = 4 WHERE id = ?",
+                arrayOf<Any>(habitId))
+        }
+        repository.updateNotifications(habitId, true, 14, 30)
+        val habit = repository.getHabit(habitId)!!
+        assertDecimal("9", habit.currentGoal)
+        assertEquals(4, habit.dayIndex)
+        assertTrue(habit.notificationsEnabled)
+        assertEquals(14, habit.notificationHour)
+        assertEquals(30, habit.notificationMinute)
+    }
 
     @Test
     fun repeatedCompletionCreatesOneRecordAndCreditsPointsOnce() = runBlocking {

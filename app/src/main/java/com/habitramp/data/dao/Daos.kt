@@ -49,6 +49,9 @@ interface HabitDao {
     @Update
     suspend fun update(habit: HabitEntity)
 
+    @Query("UPDATE habits SET notificationsEnabled = :enabled, notificationHour = :hour, notificationMinute = :minute WHERE id = :habitId")
+    suspend fun updateNotifications(habitId: Long, enabled: Boolean, hour: Int, minute: Int)
+
     @Query("DELETE FROM habits WHERE id = :id")
     suspend fun deleteById(id: Long)
 }

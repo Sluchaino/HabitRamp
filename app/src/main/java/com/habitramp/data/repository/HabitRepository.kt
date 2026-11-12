@@ -859,15 +859,8 @@ class HabitRepository(
         hour: Int,
         minute: Int
     ) {
-        val habit = getHabit(habitId) ?: return
         db.withTransaction {
-            habitDao.update(
-                habit.copy(
-                    notificationsEnabled = enabled,
-                    notificationHour = hour.coerceIn(0, 23),
-                    notificationMinute = minute.coerceIn(0, 59)
-                ).toEntity()
-            )
+            habitDao.updateNotifications(habitId, enabled, hour.coerceIn(0, 23), minute.coerceIn(0, 59))
         }
     }
 
