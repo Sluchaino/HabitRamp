@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -70,26 +71,67 @@ class NotificationScheduler(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val triggerAt = next.toInstant().toEpochMilli()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        setAlarm(triggerAt, pendingIntent)
+    }
+
+    /**
+     * Exact alarms need a special user-granted access on Android 12+. Without it
+     * the reminder is still delivered, only the system may batch/delay it, so we
+     * fall back to an inexact alarm instead of asking for the permission.
+     */
+    private fun setAlarm(triggerAt: Long, pendingIntent: PendingIntent) {
+        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            alarmManager.canScheduleExactAlarms()
+        if (exactAllowed) {
+            try {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+                return
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Exact alarm rejected, falling back to inexact", e)
             }
-        } catch (_: SecurityException) {
+        }
+        try {
             alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        } catch (e: Exception) {
+            // A missing permission or an invalid trigger must not crash the caller.
+            Log.e(TAG, "Failed to schedule a reminder", e)
         }
     }
 
     fun cancel(habitId: Long) {
-        val intent = Intent(context, ReminderReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
+        val pendingIntent = reminderPendingIntent(habitId) ?: return
+        try {
+            alarmManager.cancel(pendingIntent)
+        } catch (e: Exception) {
+            // Cancelling is best effort: never let it break the caller's data write.
+            Log.w(TAG, "Failed to cancel reminder for habit $habitId", e)
+        } finally {
+            // Drop the PendingIntent itself so no orphaned reminder stays registered.
+            runCatching { pendingIntent.cancel() }
+        }
+    }
+
+    /** Visible for integration tests: whether a reminder is still registered. */
+    internal fun isReminderRegistered(habitId: Long): Boolean = reminderPendingIntent(habitId) != null
+
+    /**
+     * Looks up an already created reminder without allocating a new one, so a
+     * missing alarm is left untouched and no side effects happen on cancellation.
+     */
+    private fun reminderPendingIntent(habitId: Long): PendingIntent? = try {
+        PendingIntent.getBroadcast(
             context,
             habitId.toInt(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            Intent(context, ReminderReceiver::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
-        alarmManager.cancel(pendingIntent)
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to look up reminder for habit $habitId", e)
+        null
     }
 
     /** Visible for integration tests: the next moment a reminder may actually fire. */
@@ -159,5 +201,6 @@ class NotificationScheduler(
     companion object {
         const val CHANNEL_ID = "habit_reminders"
         const val EXTRA_HABIT_ID = "habit_id"
+        private const val TAG = "NotificationScheduler"
     }
 }

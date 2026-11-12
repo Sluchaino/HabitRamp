@@ -203,7 +203,15 @@ class HabitSettingsViewModel(
 
     fun delete() {
         runAction {
-            repository.deleteHabit(habitId)
+            // Cancel first: once the row is gone an orphaned alarm would still
+            // wake the app for a habit that no longer exists.
+            notificationScheduler.cancel(habitId)
+            runCatching { repository.deleteHabit(habitId) }
+                .onFailure {
+                    // Deletion failed, so the habit survived: bring its reminder back.
+                    runCatching { notificationScheduler.scheduleAll() }
+                }
+                .getOrThrow()
             closed.value = true
         }
     }
