@@ -10,6 +10,7 @@ import com.habitramp.core.model.EventType
 import com.habitramp.core.model.HabitStatus
 import com.habitramp.core.model.PauseStatus
 import com.habitramp.core.model.PauseType
+import com.habitramp.core.model.TargetBehavior
 import com.habitramp.core.model.Units
 import com.habitramp.data.entity.UserProgressEntity
 import kotlinx.coroutines.flow.first
@@ -439,7 +440,112 @@ class HabitRepositoryIntegrationTest {
         }
     }
 
+    // ------------------------------------------------ target behavior snapshots
+
+    @Test
+    fun resolvingTargetToContinueGrowsPotentialWithoutRewritingPastDays() = runBlocking {
+        val habitId = createTargetHabit()
+
+        assertTrue(repository.resolveTarget(habitId, TargetBehavior.CONTINUE))
+
+        val resolved = repository.getHabit(habitId)!!
+        assertEquals(TargetBehavior.CONTINUE, resolved.targetBehavior)
+        assertDecimal("4", resolved.currentGoal)
+
+        // The target was recorded today, so the new behavior starts tomorrow.
+        val snapshot = repository.getSettings(habitId).last()
+        assertEquals(LocalDate.of(2026, 3, 6), snapshot.effectiveDate)
+        assertEquals(TargetBehavior.CONTINUE, snapshot.targetBehavior)
+
+        advanceTo(LocalDate.of(2026, 3, 8))
+        val statistics = repository.getStatistics(habitId, StatisticsPeriod.WEEK)!!
+        assertDecimal("6", statistics.actual)
+        // 1 + 2 + 3 + 4 + 5 + 6: growth continues after the reached target.
+        assertDecimal("21", statistics.potential)
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6"),
+            statistics.chart
+                .filter { !it.date.isBefore(LocalDate.of(2026, 3, 3)) }
+                .map { it.potential.toPlainString() }
+        )
+        // Already recorded days keep their planned values.
+        assertEquals(
+            listOf("1", "2", "3"),
+            repository.getRecords(habitId)
+                .filter { it.date <= LocalDate.of(2026, 3, 5) }
+                .map { it.plannedValue.toPlainString() }
+        )
+    }
+
+    @Test
+    fun resolvingTargetToMaintainWritesSnapshotAndKeepsTargetCap() = runBlocking {
+        val habitId = createTargetHabit()
+
+        assertTrue(repository.resolveTarget(habitId, TargetBehavior.MAINTAIN))
+
+        val resolved = repository.getHabit(habitId)!!
+        assertEquals(TargetBehavior.MAINTAIN, resolved.targetBehavior)
+        assertDecimal("3", resolved.currentGoal)
+
+        val snapshot = repository.getSettings(habitId).last()
+        assertEquals(LocalDate.of(2026, 3, 6), snapshot.effectiveDate)
+        assertEquals(TargetBehavior.MAINTAIN, snapshot.targetBehavior)
+
+        advanceTo(LocalDate.of(2026, 3, 8))
+        val statistics = repository.getStatistics(habitId, StatisticsPeriod.WEEK)!!
+        // 1 + 2 + 3 + 3 + 3 + 3: the target stays frozen.
+        assertDecimal("15", statistics.potential)
+        assertEquals(
+            listOf("1", "2", "3", "3", "3", "3"),
+            statistics.chart
+                .filter { !it.date.isBefore(LocalDate.of(2026, 3, 3)) }
+                .map { it.potential.toPlainString() }
+        )
+    }
+
+    @Test
+    fun resolvingTargetToFinishStopsPotentialOnTheCompletionDay() = runBlocking {
+        val habitId = createTargetHabit()
+
+        assertTrue(repository.resolveTarget(habitId, TargetBehavior.FINISH))
+
+        val completed = repository.getHabit(habitId)!!
+        assertEquals(HabitStatus.COMPLETED, completed.status)
+        assertEquals(LocalDate.of(2026, 3, 5), completed.completedAt)
+        assertFalse(completed.targetReached)
+
+        val statistics = repository.getStatistics(habitId, StatisticsPeriod.WEEK)!!
+        // Only the completed days count: 1 + 2 + 3.
+        assertDecimal("6", statistics.potential)
+        assertDecimal("6", statistics.actual)
+        assertTrue(
+            statistics.chart
+                .filter { it.date.isAfter(LocalDate.of(2026, 3, 5)) }
+                .all { !it.planned && it.potential.compareTo(BigDecimal.ZERO) == 0 }
+        )
+
+        advanceTo(LocalDate.of(2026, 3, 8))
+        val later = repository.getStatistics(habitId, StatisticsPeriod.WEEK)!!
+        assertDecimal("6", later.potential)
+        assertEquals(3, repository.getRecords(habitId).size)
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    /** Creates a habit with target 3 and completes March 3..5 up to the target. */
+    private suspend fun createTargetHabit(): Long {
+        val habitId = createHabit("Read")
+        repository.updateTarget(habitId, BigDecimal("3"), TargetBehavior.ASK)
+
+        advanceTo(LocalDate.of(2026, 3, 3))
+        assertTrue(repository.recordCompletion(habitId, null))
+        advanceTo(LocalDate.of(2026, 3, 4))
+        assertTrue(repository.recordCompletion(habitId, null))
+        advanceTo(LocalDate.of(2026, 3, 5))
+        assertTrue(repository.recordCompletion(habitId, null))
+        assertTrue(repository.getHabit(habitId)!!.targetReached)
+        return habitId
+    }
 
     private suspend fun createHabit(name: String, initial: String = "1"): Long =
         repository.createHabit(name, BigDecimal(initial), Units.DEFAULT.code).getOrThrow()
