@@ -24,6 +24,10 @@ class ReminderReceiver : BroadcastReceiver() {
                 if (habit != null) {
                     app.container.notificationScheduler.showNotification(habit)
                     app.container.notificationScheduler.schedule(habit)
+                } else {
+                    // A stale alarm for an already deleted habit: drop any leftovers
+                    // instead of rescheduling and let the receiver finish quietly.
+                    app.container.notificationScheduler.cancel(habitId)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to handle reminder for habit $habitId", e)

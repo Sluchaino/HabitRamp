@@ -13,11 +13,13 @@ import com.habitramp.core.database.HabitDatabase
 import com.habitramp.core.model.PauseType
 import com.habitramp.core.model.Units
 import com.habitramp.data.repository.HabitRepository
+import com.habitramp.presentation.habit_settings.HabitSettingsViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -80,6 +82,53 @@ class ReminderIntegrationTest {
         // Extension moves the end to March 17, so no trigger is left inside the pause.
         assertEquals(LocalDate.of(2026, 3, 17), trigger!!.toLocalDate())
         assertFalse(trigger.toLocalDate().isBefore(LocalDate.of(2026, 3, 17)))
+    }
+
+    @Test
+    fun cancelRemovesOnlyTheRequestedHabitReminder() = runBlocking {
+        val walking = habitWithReminder("Walk")
+        // Only one habit slot is unlocked by default, so free it for the second one.
+        assertTrue(repository.archiveHabit(walking))
+        val reading = habitWithReminder("Read")
+        assertTrue(scheduler.isReminderRegistered(walking))
+        assertTrue(scheduler.isReminderRegistered(reading))
+
+        scheduler.cancel(walking)
+
+        assertFalse(scheduler.isReminderRegistered(walking))
+        assertTrue(
+            "Cancelling one habit must keep reminders of other habits",
+            scheduler.isReminderRegistered(reading)
+        )
+    }
+
+    @Test
+    fun deletingHabitCancelsItsReminder() = runBlocking {
+        val habitId = habitWithReminder("Walk")
+
+        HabitSettingsViewModel(repository, scheduler, habitId).delete()
+
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline &&
+            (repository.getHabit(habitId) != null || scheduler.isReminderRegistered(habitId))
+        ) {
+            Thread.sleep(50)
+        }
+
+        assertNull("The habit should be deleted", repository.getHabit(habitId))
+        assertFalse(
+            "A deleted habit must not leave a scheduled reminder behind",
+            scheduler.isReminderRegistered(habitId)
+        )
+    }
+
+    private suspend fun habitWithReminder(name: String): Long {
+        val habitId = repository
+            .createHabit(name, BigDecimal.ONE, Units.DEFAULT.code)
+            .getOrThrow()
+        repository.updateNotifications(habitId, enabled = true, hour = 9, minute = 0)
+        scheduler.schedule(repository.getHabit(habitId)!!)
+        return habitId
     }
 
     @Test
