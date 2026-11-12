@@ -13,6 +13,7 @@ import com.habitramp.domain.model.DailyRecord
 import com.habitramp.domain.model.Habit
 import com.habitramp.domain.model.HabitEvent
 import com.habitramp.domain.model.HabitPause
+import com.habitramp.domain.model.SettingsSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +35,8 @@ data class DayDetail(
     val actualValue: BigDecimal?,
     val isPause: Boolean,
     val pauseEnd: LocalDate?,
-    val isManualReset: Boolean
+    val isManualReset: Boolean,
+    val isScheduled: Boolean
 )
 
 data class HistoryUiState(
@@ -45,6 +47,7 @@ data class HistoryUiState(
     val records: List<DailyRecord> = emptyList(),
     val pauses: List<HabitPause> = emptyList(),
     val resets: List<HabitEvent> = emptyList(),
+    val settings: List<SettingsSnapshot> = emptyList(),
     val detail: DayDetail? = null
 )
 
@@ -60,7 +63,8 @@ class HistoryViewModel(
     private data class Data(
         val records: List<DailyRecord>,
         val pauses: List<HabitPause>,
-        val resets: List<HabitEvent>
+        val resets: List<HabitEvent>,
+        val settings: List<SettingsSnapshot>
     )
 
     private val baseFlow = combine(
@@ -75,14 +79,20 @@ class HistoryViewModel(
 
     private val dataFlow = selectedHabitId.flatMapLatest { id ->
         if (id == null) {
-            flowOf(Data(emptyList(), emptyList(), emptyList()))
+            flowOf(Data(emptyList(), emptyList(), emptyList(), emptyList()))
         } else {
             combine(
                 repository.observeRecords(id),
                 repository.observePauses(id),
-                repository.observeEvents(id)
-            ) { records, pauses, events ->
-                Data(records, pauses, events.filter { it.type == EventType.MANUAL_RESET })
+                repository.observeEvents(id),
+                repository.observeSettings(id)
+            ) { records, pauses, events, settings ->
+                Data(
+                    records = records,
+                    pauses = pauses,
+                    resets = events.filter { it.type == EventType.MANUAL_RESET },
+                    settings = settings
+                )
             }
         }
     }
@@ -102,7 +112,8 @@ class HistoryViewModel(
                 actualValue = record?.actualValue,
                 isPause = pause != null,
                 pauseEnd = pause?.endDate,
-                isManualReset = data.resets.any { it.effectiveDate == date }
+                isManualReset = data.resets.any { it.effectiveDate == date },
+                isScheduled = base.habit?.let { isScheduledOn(it, data.settings, date) } ?: false
             )
         }
         HistoryUiState(
@@ -113,6 +124,7 @@ class HistoryViewModel(
             records = data.records,
             pauses = data.pauses,
             resets = data.resets,
+            settings = data.settings,
             detail = detailInfo
         )
     }.stateIn(

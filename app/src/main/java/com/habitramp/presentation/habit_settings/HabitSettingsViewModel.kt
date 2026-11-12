@@ -10,13 +10,13 @@ import com.habitramp.core.model.MissPolicy
 import com.habitramp.core.model.PauseType
 import com.habitramp.core.model.TargetBehavior
 import com.habitramp.core.notification.NotificationScheduler
-import com.habitramp.core.util.formatValue
 import com.habitramp.core.util.parseDecimalInput
 import com.habitramp.data.repository.HabitRepository
 import com.habitramp.domain.calculator.ResetCalculator
 import com.habitramp.domain.model.DailyRecord
 import com.habitramp.domain.model.Habit
 import com.habitramp.domain.model.HabitPause
+import com.habitramp.presentation.components.manualResetMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -172,9 +172,10 @@ class HabitSettingsViewModel(
     fun manualReset() {
         runAction {
             val goal = repository.manualReset(habitId)
-            val unit = currentHabit()?.unit
-            message.value = if (goal != null && unit != null) {
-                "Новая цель: ${goal.formatValue(unit)}"
+            val updated = repository.getHabit(habitId)
+            val unit = updated?.unit ?: currentHabit()?.unit
+            message.value = if (unit != null) {
+                manualResetMessage(goal, updated?.pendingResetDate, unit)
             } else {
                 "Сброс недоступен"
             }

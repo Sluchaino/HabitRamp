@@ -50,9 +50,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -85,7 +87,7 @@ fun HomeScreen(
     val selectedHabit = state.selected
     val snackbarHostState = remember { SnackbarHostState() }
     var resetConfirm by remember { mutableStateOf(false) }
-    var actualInput by rememberSaveable { mutableStateOf("") }
+    var actualInput by rememberSaveable(state.selected?.id) { mutableStateOf("") }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
 
@@ -190,58 +192,13 @@ fun HomeScreen(
                 }
             } else {
                 item {
-                    SectionCard(title = "Выполнение") {
-                        Text(
-                            text = "Фактически выполнено",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedTextField(
-                            value = actualInput,
-                            onValueChange = { actualInput = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Необязательно. Пусто = 0") },
-                            suffix = { Text(habit.unit.shortName) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Button(
-                                onClick = viewModel::markDone,
-                                modifier = Modifier.size(176.dp),
-                                shape = CircleShape,
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        Icons.Outlined.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(42.dp)
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    Text("Выполнено", style = MaterialTheme.typography.titleMedium)
-                                }
-                            }
-                        }
-                        OutlinedButton(
-                            onClick = { viewModel.markNotDone(actualInput) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                        ) {
-                            Text("Не выполнено")
-                        }
-                        Text(
-                            text = "Если фактическое значение меньше цели, день не будет засчитан " +
-                                "как выполненный.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    CompletionSection(
+                        habit = habit,
+                        actualInput = actualInput,
+                        onActualInputChange = { actualInput = it },
+                        onDone = viewModel::markDone,
+                        onNotDone = { viewModel.markNotDone(actualInput) }
+                    )
                 }
                 item {
                     TextButton(onClick = { resetConfirm = true }) {
@@ -273,7 +230,8 @@ fun HomeScreen(
             text = if (newGoal != null) {
                 "Текущая цель ${selectedHabit!!.currentGoal.formatValue(selectedHabit.unit)} будет уменьшена до " +
                     "${newGoal.formatWithUnit(selectedHabit.unit).trimEnd('.')}. " +
-                    "Начнётся новый цикл."
+                    "Сброс применится сразу, если сегодня запланированный день без отметки, " +
+                    "иначе — в следующий запланированный день."
             } else "Текущая цель будет уменьшена на 50%.",
             confirmLabel = "Сбросить",
             onConfirm = {
@@ -313,6 +271,82 @@ fun HomeScreen(
 }
 
 @Composable
+internal fun CompletionSection(
+    habit: Habit,
+    actualInput: String,
+    onActualInputChange: (String) -> Unit,
+    onDone: () -> Unit,
+    onNotDone: () -> Unit
+) {
+    val goalText = habit.currentGoal.formatWithUnit(habit.unit)
+    SectionCard(title = "Выполнение") {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            Button(
+                onClick = onDone,
+                modifier = Modifier
+                    .size(176.dp)
+                    .testTag("home-completion-done"),
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Outlined.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(42.dp)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("Выполнено", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "вся цель",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Запишет полную цель: $goalText.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedButton(
+            onClick = onNotDone,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("home-completion-not-done")
+        ) {
+            Text("Не выполнено")
+        }
+        Text(
+            text = "Запишет фактическое значение из поля ниже. Если оно не меньше цели, " +
+                "день будет засчитан как выполненный.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = actualInput,
+            onValueChange = onActualInputChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("home-completion-actual"),
+            label = { Text("Фактически выполнено") },
+            placeholder = { Text("0") },
+            suffix = { Text(habit.unit.shortName) },
+            supportingText = { Text("Оставьте пустым, чтобы записать 0.") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true
+        )
+    }
+}
+
+@Composable
 private fun GoalCard(habit: Habit, streak: Int, plannedToday: Boolean) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -328,7 +362,9 @@ private fun GoalCard(habit: Habit, streak: Int, plannedToday: Boolean) {
                 text = habit.name,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = if (plannedToday) "Сегодняшняя цель" else "Текущая цель",
