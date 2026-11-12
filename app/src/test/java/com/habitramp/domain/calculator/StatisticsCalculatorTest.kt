@@ -24,6 +24,31 @@ import org.junit.Test
 class StatisticsCalculatorTest {
 
     @Test
+    fun `step changes while maintaining preserve future potential when growth resumes`() {
+        val goals = StatisticsCalculator.potentialGoals(
+            habit(targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+            listOf(snapshot(date(1, 1), targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+                snapshot(date(1, 10), step = "2", targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+                snapshot(date(1, 11), step = "2", targetValue = "7", targetBehavior = TargetBehavior.CONTINUE)),
+            emptyList(), date(1, 11))
+        assertDecimal("7", goals.getValue(date(1, 10)))
+        assertDecimal("9", goals.getValue(date(1, 11)))
+    }
+
+    @Test
+    fun `choosing maintain and changing step on the same day preserves continuity`() {
+        val goals = StatisticsCalculator.potentialGoals(
+            habit(targetValue = "7"),
+            listOf(snapshot(date(1, 1), targetValue = "7"),
+                snapshot(date(1, 8), targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+                snapshot(date(1, 8), step = "2", targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+                snapshot(date(1, 9), step = "2", targetValue = "7", targetBehavior = TargetBehavior.CONTINUE)),
+            emptyList(), date(1, 9))
+        assertDecimal("7", goals.getValue(date(1, 8)))
+        assertDecimal("9", goals.getValue(date(1, 9)))
+    }
+
+    @Test
     fun `potential maintains reached target across cycles and resumes after reset`() {
         val goals = StatisticsCalculator.potentialGoals(
             habit(targetValue = "7"),

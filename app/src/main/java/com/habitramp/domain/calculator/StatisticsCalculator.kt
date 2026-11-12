@@ -172,6 +172,9 @@ object StatisticsCalculator {
                 ) targetReached = false
                 target = snapshot.targetValue
                 behavior = snapshot.targetBehavior
+                if (behavior == TargetBehavior.MAINTAIN && targetReached && target != null) {
+                    goal = target
+                }
                 snapshotIndex++
             }
             while (resetIndex < resets.size && !resets[resetIndex].effectiveDate.isAfter(date)) {
@@ -198,7 +201,9 @@ object StatisticsCalculator {
                 }
                 val nextRaw = ProgressionCalculator.rawGoal(base, step, cycle, day)
                     .roundToUnit(habit.unit)
-                goal = ProgressionCalculator.applyTargetCap(nextRaw, target, behavior)
+                goal = if (behavior == TargetBehavior.MAINTAIN && targetReached && target != null) {
+                    target
+                } else ProgressionCalculator.applyTargetCap(nextRaw, target, behavior)
             }
             date = date.plusDays(1)
         }
