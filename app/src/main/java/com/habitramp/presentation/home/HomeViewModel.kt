@@ -9,7 +9,6 @@ import com.habitramp.AppContainer
 import com.habitramp.core.model.PauseType
 import com.habitramp.core.model.TargetBehavior
 import com.habitramp.core.notification.NotificationScheduler
-import com.habitramp.core.util.formatValue
 import com.habitramp.core.util.parseDecimalInput
 import com.habitramp.data.prefs.AppPreferences
 import com.habitramp.data.repository.HabitRepository
@@ -18,6 +17,7 @@ import com.habitramp.domain.model.DailyRecord
 import com.habitramp.domain.model.Habit
 import com.habitramp.domain.model.HabitPause
 import com.habitramp.domain.model.UserProgress
+import com.habitramp.presentation.components.manualResetMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -192,9 +192,8 @@ class HomeViewModel(
         viewModelScope.launch {
             runCatching {
                 val newGoal = repository.manualReset(habit.id)
-                if (newGoal != null) {
-                    message.value = "Новая цель: ${newGoal.format(habit)}"
-                }
+                val pendingDate = repository.getHabit(habit.id)?.pendingResetDate
+                message.value = manualResetMessage(newGoal, pendingDate, habit.unit)
             }.onFailure { error.value = it.message ?: "Не удалось выполнить сброс" }
         }
     }
@@ -286,8 +285,6 @@ class HomeViewModel(
         }
         return streak
     }
-
-    private fun BigDecimal.format(habit: Habit): String = formatValue(habit.unit)
 
     companion object {
         fun factory(container: AppContainer, initialHabitId: Long? = null): ViewModelProvider.Factory =

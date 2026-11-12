@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -129,7 +131,7 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
             CompletionStatus.MISSED -> "Пропущено"
             null -> when {
                 detail.isPause -> "Пауза"
-                !habit.isScheduledOn(detail.date) -> "Не запланировано"
+                !detail.isScheduled -> "Не запланировано"
                 detail.date.isAfter(LocalDate.now()) -> "Будущая дата"
                 else -> "Нет записи"
             }
@@ -160,7 +162,7 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
 }
 
 @Composable
-private fun Calendar(
+internal fun Calendar(
     month: YearMonth,
     state: HistoryUiState,
     onSelectDay: (LocalDate) -> Unit
@@ -219,31 +221,57 @@ private fun DayCell(
     val record = state.records.firstOrNull { it.date == date }
     val pause = state.pauses.firstOrNull { it.covers(date) }
     val reset = state.resets.any { it.effectiveDate == date }
+    val scheduled = state.habit?.let { isScheduledOn(it, state.settings, date) } ?: true
+    val unscheduled = !scheduled && record == null && pause == null
     val baseColor = when {
         record?.status == CompletionStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
         record?.status == CompletionStatus.PARTIAL -> MaterialTheme.colorScheme.tertiaryContainer
         record?.status == CompletionStatus.MISSED -> MaterialTheme.colorScheme.errorContainer
         pause != null -> MaterialTheme.colorScheme.secondaryContainer
+        unscheduled -> Color.Transparent
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
     }
-    val border = if (selected) {
-        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-    } else Modifier
+    val stateText = when {
+        record?.status == CompletionStatus.COMPLETED -> "Выполнено"
+        record?.status == CompletionStatus.PARTIAL -> "Частично выполнено"
+        record?.status == CompletionStatus.MISSED -> "Пропущено"
+        pause != null -> "Пауза"
+        unscheduled -> "Не запланировано"
+        else -> "Нет записи"
+    }
+    val shape = RoundedCornerShape(8.dp)
+    val border = when {
+        selected -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+        unscheduled -> Modifier.border(
+            1.dp,
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+            shape
+        )
+        else -> Modifier
+    }
     Box(
         modifier = modifier
             .padding(2.dp)
             .height(44.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(border)
+            .clip(shape)
             .background(baseColor)
-            .clickable(onClick = onClick),
+            .then(border)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = "${date.formatFull()}: $stateText"
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 date.dayOfMonth.toString(),
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (date == LocalDate.now()) FontWeight.Bold else FontWeight.Normal
+                fontWeight = if (date == LocalDate.now()) FontWeight.Bold else FontWeight.Normal,
+                color = if (unscheduled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
             )
             if (reset) {
                 Box(
@@ -252,13 +280,20 @@ private fun DayCell(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.tertiary)
                 )
+            } else if (unscheduled) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 10.dp, height = 2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Legend() {
+internal fun Legend() {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -269,18 +304,35 @@ private fun Legend() {
         LegendItem(MaterialTheme.colorScheme.errorContainer, "Пропуск")
         LegendItem(MaterialTheme.colorScheme.secondaryContainer, "Пауза")
         LegendItem(MaterialTheme.colorScheme.tertiary, "Сброс")
+        LegendItem(Color.Transparent, "Не запланировано", outlined = true)
     }
 }
 
 @Composable
-private fun LegendItem(color: Color, text: String) {
+private fun LegendItem(color: Color, text: String, outlined: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        val shape = RoundedCornerShape(3.dp)
         Box(
             modifier = Modifier
                 .size(10.dp)
-                .clip(RoundedCornerShape(3.dp))
+                .clip(shape)
                 .background(color)
+                .then(
+                    if (outlined) {
+                        Modifier.border(
+                            1.dp,
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                            shape
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
         )
-        Text(" $text", style = MaterialTheme.typography.bodySmall)
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(start = 4.dp)
+        )
     }
 }
