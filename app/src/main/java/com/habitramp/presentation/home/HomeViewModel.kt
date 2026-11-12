@@ -106,6 +106,10 @@ class HomeViewModel(
         if (id == null) flowOf(emptyList()) else repository.observePauses(id)
     }
 
+    private val settingsFlow = selectedHabitId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else repository.observeSettings(id)
+    }
+
     private val clockFlow = combine(error, message, today) { err, msg, date ->
         Triple(err, msg, date)
     }
@@ -114,8 +118,9 @@ class HomeViewModel(
         baseFlow,
         recordsFlow,
         pausesFlow,
+        settingsFlow,
         clockFlow
-    ) { base, records, pauses, clock ->
+    ) { base, records, pauses, settings, clock ->
         val todayDate = clock.third
         val habit = base.selected
         val todayRecord = records.firstOrNull { it.date == todayDate }
@@ -128,7 +133,7 @@ class HomeViewModel(
             selected = habit,
             todayRecord = todayRecord,
             activePause = pause,
-            streak = if (habit == null) 0 else calculateStreak(habit, records, pauses, todayDate),
+            streak = if (habit == null) 0 else calculateStreak(habit, records, pauses, todayDate, settings),
             progress = base.progress,
             activeCount = base.activeCount,
             targetPrompt = habit?.targetReached == true,
@@ -244,46 +249,6 @@ class HomeViewModel(
                 .onSuccess { repository.runDailyProcessing() }
                 .onFailure { error.value = it.message ?: "Не удалось сохранить результат" }
         }
-    }
-
-    private fun calculateStreak(
-        habit: Habit,
-        records: List<DailyRecord>,
-        pauses: List<HabitPause>,
-        today: LocalDate
-    ): Int {
-        var date = today
-        var streak = 0
-        var guard = 0
-        while (guard < 4000) {
-            if (pauses.any { it.covers(date) }) {
-                date = date.minusDays(1)
-                guard++
-                continue
-            }
-            if (!habit.isScheduledOn(date)) {
-                date = date.minusDays(1)
-                guard++
-                continue
-            }
-            val record = records.firstOrNull { it.date == date }
-            if (record == null) {
-                if (date == today) {
-                    date = date.minusDays(1)
-                    guard++
-                    continue
-                }
-                break
-            }
-            if (record.status == com.habitramp.core.model.CompletionStatus.COMPLETED) {
-                streak++
-                date = date.minusDays(1)
-                guard++
-            } else {
-                break
-            }
-        }
-        return streak
     }
 
     companion object {
