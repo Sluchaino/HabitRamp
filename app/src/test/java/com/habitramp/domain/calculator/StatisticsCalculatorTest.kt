@@ -134,6 +134,83 @@ class StatisticsCalculatorTest {
     }
 
     @Test
+    fun `continue snapshot lets potential grow from its effective date`() {
+        val goals = StatisticsCalculator.potentialGoals(
+            habit = habit(targetValue = "3", targetBehavior = TargetBehavior.CONTINUE),
+            settings = listOf(
+                snapshot(
+                    effectiveDate = date(1, 1),
+                    targetValue = "3",
+                    targetBehavior = TargetBehavior.ASK
+                ),
+                snapshot(
+                    effectiveDate = date(1, 4),
+                    targetValue = "3",
+                    targetBehavior = TargetBehavior.CONTINUE
+                )
+            ),
+            manualResets = emptyList(),
+            to = date(1, 6)
+        )
+        // The reached target still caps the already simulated days.
+        assertDecimal("1", goals.getValue(date(1, 1)))
+        assertDecimal("2", goals.getValue(date(1, 2)))
+        assertDecimal("3", goals.getValue(date(1, 3)))
+        // From the effective date the agreed formula keeps growing.
+        assertDecimal("4", goals.getValue(date(1, 4)))
+        assertDecimal("5", goals.getValue(date(1, 5)))
+        assertDecimal("6", goals.getValue(date(1, 6)))
+    }
+
+    @Test
+    fun `maintain snapshot keeps the target cap from its effective date`() {
+        val goals = StatisticsCalculator.potentialGoals(
+            habit = habit(targetValue = "3", targetBehavior = TargetBehavior.MAINTAIN),
+            settings = listOf(
+                snapshot(
+                    effectiveDate = date(1, 1),
+                    targetValue = "3",
+                    targetBehavior = TargetBehavior.ASK
+                ),
+                snapshot(
+                    effectiveDate = date(1, 4),
+                    targetValue = "3",
+                    targetBehavior = TargetBehavior.MAINTAIN
+                )
+            ),
+            manualResets = emptyList(),
+            to = date(1, 6)
+        )
+        assertDecimal("1", goals.getValue(date(1, 1)))
+        assertDecimal("2", goals.getValue(date(1, 2)))
+        assertDecimal("3", goals.getValue(date(1, 3)))
+        assertDecimal("3", goals.getValue(date(1, 4)))
+        assertDecimal("3", goals.getValue(date(1, 5)))
+        assertDecimal("3", goals.getValue(date(1, 6)))
+    }
+
+    @Test
+    fun `finish stops potential on the completion day without breaking the cap`() {
+        val result = StatisticsCalculator.calculate(
+            habit = habit(targetValue = "3", completedAt = date(1, 4)),
+            records = emptyList(),
+            pauses = emptyList(),
+            settings = emptyList(),
+            manualResets = emptyList(),
+            period = DatePeriod(date(1, 1), date(1, 7)),
+            previousPeriod = DatePeriod(date(12, 29), date(12, 31))
+        )
+        // Jan 1..4: 1, 2, 3 and the capped 3 on the completion day.
+        assertDecimal("9", result.potential)
+        assertDecimal("0", result.previousPotential)
+        assertTrue(result.chart[3].planned)
+        assertDecimal("3", result.chart[3].potential)
+        assertFalse(result.chart[4].planned)
+        assertDecimal("0", result.chart[4].potential)
+        assertFalse(result.chart[6].planned)
+    }
+
+    @Test
     fun `calculate compares actual values with potential values`() {
         val habit = habit()
         val records = listOf(

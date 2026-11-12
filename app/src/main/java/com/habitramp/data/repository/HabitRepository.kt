@@ -916,6 +916,11 @@ class HabitRepository(
                 TargetBehavior.ASK -> return@withTransaction false
             }
             habitDao.update(habit.toEntity())
+            if (behavior != TargetBehavior.FINISH) {
+                // The chosen behavior only applies from the first day that is not
+                // already recorded, so historical statistics stay unchanged.
+                insertSnapshot(habit, effectiveSettingsDate(habit, clock()))
+            }
             insertEvent(
                 habitId = habitId,
                 type = EventType.GOAL_REACHED,
