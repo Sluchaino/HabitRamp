@@ -36,7 +36,9 @@ object ProgressionCalculator {
         }
         val raw = rawGoal(state.base, state.step, cycle, day).roundToUnit(unit)
         val reachedNow = state.targetValue != null && completedGoal >= state.targetValue
-        val nextGoal = applyTargetCap(raw, state.targetValue, state.targetBehavior)
+        val nextGoal = if (reachedNow && state.targetBehavior == TargetBehavior.MAINTAIN) {
+            state.targetValue!!
+        } else applyTargetCap(raw, state.targetValue, state.targetBehavior)
         return state.copy(
             currentGoal = nextGoal,
             cycleIndex = cycle,
@@ -55,7 +57,9 @@ object ProgressionCalculator {
         }
         val raw = rawGoal(state.base, state.step, cycle, day).roundToUnit(unit)
         return state.copy(
-            currentGoal = applyTargetCap(raw, state.targetValue, state.targetBehavior),
+            currentGoal = if (state.targetBehavior == TargetBehavior.MAINTAIN &&
+                state.targetValue != null && state.currentGoal >= state.targetValue
+            ) state.targetValue else applyTargetCap(raw, state.targetValue, state.targetBehavior),
             cycleIndex = cycle,
             dayIndex = day,
             targetReached = false
@@ -123,9 +127,8 @@ object ProgressionCalculator {
 
     fun maintainTarget(state: ProgressionState, unit: MeasurementUnit): ProgressionState {
         val target = state.targetValue ?: state.currentGoal
-        val goal = if (state.currentGoal > target) target else state.currentGoal
         return state.copy(
-            currentGoal = goal.roundToUnit(unit, RoundingMode.HALF_UP),
+            currentGoal = target.roundToUnit(unit, RoundingMode.HALF_UP),
             targetBehavior = TargetBehavior.MAINTAIN,
             targetReached = false
         )

@@ -147,6 +147,7 @@ object StatisticsCalculator {
         var goal = habit.initialValue
         var cycle = 0
         var day = 0
+        var targetReached = false
 
         var date = start
         while (!date.isAfter(to)) {
@@ -166,6 +167,9 @@ object StatisticsCalculator {
                     cycleLength = snapshot.cycleLength
                 }
                 weekdays = snapshot.weekdays
+                if (target?.compareTo(snapshot.targetValue ?: BigDecimal.ZERO) != 0 ||
+                    snapshot.targetValue == null
+                ) targetReached = false
                 target = snapshot.targetValue
                 behavior = snapshot.targetBehavior
                 snapshotIndex++
@@ -175,14 +179,18 @@ object StatisticsCalculator {
                 goal = resets[resetIndex].newGoal
                 cycle = 0
                 day = 0
+                targetReached = false
                 resetIndex++
             }
 
             if (date.dayOfWeek in weekdays) {
                 val raw = ProgressionCalculator.rawGoal(base, step, cycle, day)
                     .roundToUnit(habit.unit)
-                goal = ProgressionCalculator.applyTargetCap(raw, target, behavior)
+                goal = if (behavior == TargetBehavior.MAINTAIN && targetReached && target != null) {
+                    target
+                } else ProgressionCalculator.applyTargetCap(raw, target, behavior)
                 result[date] = goal
+                if (target != null && goal >= target) targetReached = true
                 day += 1
                 if (day >= cycleLength) {
                     day = 0

@@ -23,6 +23,19 @@ import org.junit.Test
 
 class StatisticsCalculatorTest {
 
+    @Test
+    fun `potential maintains reached target across cycles and resumes after reset`() {
+        val goals = StatisticsCalculator.potentialGoals(
+            habit(targetValue = "7"),
+            listOf(snapshot(date(1, 1), targetValue = "7"),
+                snapshot(date(1, 8), targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN)),
+            listOf(ManualResetEvent(date(1, 16), BigDecimal("4"))), date(1, 20))
+        for (day in 7..15) assertDecimal("7", goals.getValue(date(1, day)))
+        assertDecimal("4", goals.getValue(date(1, 16)))
+        assertDecimal("5", goals.getValue(date(1, 17)))
+        assertDecimal("7", goals.getValue(date(1, 20)))
+    }
+
     private fun date(month: Int, day: Int): LocalDate = LocalDate.of(2026, month, day)
 
     private fun snapshot(

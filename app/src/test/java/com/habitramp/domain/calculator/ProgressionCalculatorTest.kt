@@ -12,6 +12,35 @@ import org.junit.Test
 
 class ProgressionCalculatorTest {
 
+    @Test
+    fun `maintain holds target across cycle boundaries and keep misses`() {
+        var current = state(base = "1", currentGoal = "7", dayIndex = 6,
+            targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN)
+        repeat(21) {
+            current = ProgressionCalculator.advanceAfterCompletion(current, current.currentGoal, reps)
+            assertDecimal("7", current.currentGoal)
+        }
+        current = ProgressionCalculator.advanceAfterMiss(current.copy(dayIndex = 6), reps)
+        assertDecimal("7", current.currentGoal)
+    }
+
+    @Test
+    fun `choosing maintain after reaching target on last cycle day restores target`() {
+        val next = ProgressionCalculator.advanceAfterCompletion(
+            state(base = "1", currentGoal = "7", dayIndex = 6, targetValue = "7"),
+            BigDecimal("7"), reps)
+        assertTrue(next.targetReached)
+        assertDecimal("7", ProgressionCalculator.maintainTarget(next, reps).currentGoal)
+    }
+
+    @Test
+    fun `maintain resumes growth after manual reduction`() {
+        val reduced = ProgressionCalculator.resetTo(
+            state(currentGoal = "7", targetValue = "7", targetBehavior = TargetBehavior.MAINTAIN),
+            BigDecimal("4"), reps)
+        assertDecimal("5", ProgressionCalculator.advanceAfterCompletion(reduced, BigDecimal("4"), reps).currentGoal)
+    }
+
     private val reps = Units.DEFAULT
 
     private fun state(
